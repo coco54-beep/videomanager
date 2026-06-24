@@ -4,7 +4,7 @@ import json
 import subprocess
 import shutil
 
-CONFIG_PATH = "video_list.json"
+CONFIG_PATH = r"config.json"
 CRF = "21"
 
 # -----------------------------
