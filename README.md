@@ -29,6 +29,11 @@
 - 实时进度显示（单文件 + 总体）
 - 压缩日志对话框
 
+## 截图
+
+<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/c22b2d81-cd66-49e2-b394-7bd46b8dd714" />
+<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/f596d0e3-4534-4365-85ad-139caae22e27" />
+
 ## 环境要求
 
 - Python 3.9+
@@ -37,8 +42,8 @@
 ## 安装
 
 ```bash
-git clone https://github.com/yourusername/video_converter.git
-cd video_converter
+git clone https://github.com/coco54-beep/videomanager.git
+cd videomanager
 pip install -r requirements.txt
 ```
 
@@ -74,19 +79,53 @@ python videomanager.py
 - **23-28** - 平衡质量与大小（推荐）
 - **29-35** - 中等质量，文件较小
 
-## 文件说明
+## 项目结构
 
 ```
-videomanager.py    # 主程序
-config.json        # 视频信息缓存（自动生成）
-requirements.txt   # 依赖列表
+videomanager/
+├── videomanager.py              # GUI 主程序
+├── batch_compress_from_video_list.py # 命令行批量压缩脚本
+├── config.json                  # 视频信息缓存（自动生成）
+├── requirements.txt             # Python 依赖
+└── README.md                    # 项目说明
 ```
 
-## 截图
+## 命令行批量压缩
 
-<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/c22b2d81-cd66-49e2-b394-7bd46b8dd714" />
-<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/f596d0e3-4534-4365-85ad-139caae22e27" />
+`batch_compress_from_video_list.py` 是一个独立的命令行脚本，用于根据 `config.json` 中的压缩评分批量处理视频。
 
+### 工作原理
+
+1. 读取 `config.json` 中的视频列表
+2. 筛选出 `compress_score > 0` 的视频（即有压缩价值的）
+3. 使用 H.264 编码转码每个视频
+4. 验证输出文件是否正常
+5. 删除源文件
+6. 更新 `config.json`
+
+### 使用场景
+
+- 无需 GUI 操作，适合后台批处理
+- 定时任务自动压缩
+- 服务器环境无人值守运行
+
+### 使用方法
+
+```bash
+# 先用 GUI 扫描生成 config.json，然后运行：
+python batch_compress_from_video_list.py
+```
+
+### 配置修改
+
+脚本顶部可修改以下参数：
+
+```python
+CONFIG_PATH = r"config.json"  # 配置文件路径
+CRF = "21"                    # 压缩质量
+```
+
+输出文件命名格式：`原文件名_h264.mkv`
 
 ## 许可证
 
