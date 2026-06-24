@@ -414,7 +414,7 @@ class SaveListThread(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, data: list[str], path: str):
+    def __init__(self, data: dict[str, VideoInfo], path: str):
         super().__init__()
         self.data = data
         self.path = path
@@ -454,15 +454,19 @@ class LoadListThread(QThread):
             self.error.emit(str(e))
             return
 
-        if not isinstance(data, list):
+        if isinstance(data, dict):
+            paths = [k for k, v in data.items() if isinstance(v, dict)]
+        elif isinstance(data, list):
+            paths = data
+        else:
             self.error.emit("文件格式错误")
             return
 
         count = 0
-        total = len(data)
+        total = len(paths)
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {}
-            for file_path in data:
+            for file_path in paths:
                 if self._stop:
                     break
                 if file_path in self.existing:
@@ -1293,11 +1297,12 @@ class VideoScanner(QWidget):
         )
         if not path:
             return
-        data = []
+        cache = load_cache()
+        data: dict[str, VideoInfo] = {}
         for row in range(self.table.rowCount()):
             path_item = self.table.item(row, 10)
-            if path_item:
-                data.append(path_item.text())
+            if path_item and path_item.text() in cache:
+                data[path_item.text()] = cache[path_item.text()]
         self.status_label.setText("正在保存列表...")
         self._save_thread = SaveListThread(data, path)
         self._save_thread.finished.connect(lambda p: self.status_label.setText(f"列表已保存: {p}"))
