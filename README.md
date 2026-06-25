@@ -33,7 +33,7 @@
 
 ## 截图
 
-<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/c22b2d81-cd66-49e2-b394-7bd46b8dd714" />
+<img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/ecfd43d1-f71e-4697-85b9-2121235d058b" />
 <img width="1102" height="632" alt="image" src="https://github.com/user-attachments/assets/f596d0e3-4534-4365-85ad-139caae22e27" />
 
 ## 环境要求
