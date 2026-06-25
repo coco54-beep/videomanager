@@ -58,10 +58,10 @@ class EncoderConfig:
 
 
 ENCODERS: list[EncoderConfig] = [
-    EncoderConfig("libx264", "libx264 (H.264)", "21", "x264"),
-    EncoderConfig("libx265", "libx265 (H.265/HEVC)", "23", "x265"),
-    EncoderConfig("libvpx-vp9", "libvpx-vp9 (VP9)", "33", "vp9"),
-    EncoderConfig("libaom-av1", "libaom-av1 (AV1)", "32", "av1"),
+    EncoderConfig("libx264", "libx264 (H.264)", "23", "x264"),
+    EncoderConfig("libx265", "libx265 (H.265/HEVC)", "24", "x265"),
+    EncoderConfig("libvpx-vp9", "libvpx-vp9 (VP9)", "30", "vp9"),
+    EncoderConfig("libaom-av1", "libaom-av1 (AV1)", "30", "av1"),
     EncoderConfig("h264_nvenc", "h264_nvenc (NVIDIA)", "23", "nvenc_h264"),
     EncoderConfig("hevc_nvenc", "hevc_nvenc (NVIDIA)", "28", "nvenc_h265"),
     EncoderConfig("h264_qsv", "h264_qsv (Intel)", "23", "qsv_h264"),
@@ -175,6 +175,23 @@ def probe_resolution(path: str) -> tuple[int, int]:
         return int(s.get("width", 1920)), int(s.get("height", 1080))
     except Exception:
         return 1920, 1080
+
+
+def probe_framerate(path: str) -> tuple[int, int]:
+    data = _run_ffprobe([
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate",
+        "-of", "json", path
+    ])
+    try:
+        streams = data.get("streams", [])
+        s = streams[0] if streams else {}
+        rfr = s.get("r_frame_rate", "30/1")
+        num, den = rfr.split("/")
+        return int(num), int(den)
+    except Exception:
+        return 30, 1
 
 
 def probe_video_quality(path: str) -> tuple[str, int]:
@@ -583,15 +600,22 @@ class CompressThread(QThread):
     def _build_x264_cmd(self, src: str, dst: str, is_animation: bool, width: int, height: int) -> list[str]:
         ref, bframes = pick_ref_bframes(width, height)
         tune_hint = "animation" if is_animation else "film"
+        fps_num, fps_den = probe_framerate(src)
+        keyint = max(int(fps_num * 8 / fps_den), 1)
+        min_keyint = max(int(fps_num / fps_den), 1)
         x264_params = (
             f"ref={ref}:"
             f"bframes={bframes}:b-adapt=2:"
-            "me=umh:subme=10:"
-            "rc-lookahead=50:"
+            "me=umh:merange=34:subme=10:"
+            f"keyint={keyint}:min-keyint={min_keyint}:scenecut=60:"
+            "rc-lookahead=240:"
             "trellis=2:"
-            "aq-mode=3:aq-strength=1.1:"
-            "psy-rd=1.0\\:-0.15:"
-            "deblock=-1\\:-1"
+            "aq-mode=3:aq-strength=0.9:"
+            "psy-rd=1.0\\:0.15:"
+            "deblock=-1\\:-1:"
+            "qcomp=0.5:"
+            "partitions=all:no-fast-pskip:"
+            "direct=auto"
         )
         return [
             "-c:v", "libx264",
@@ -608,7 +632,8 @@ class CompressThread(QThread):
             args = ["-c:v", "libx265", "-preset", "slow", "-crf", str(self.crf)]
             if is_animation:
                 args += ["-tune", "animation"]
-            args += ["-x265-params", "log-level=error"]
+            x265_params = "log-level=error:ref=4:bframes=8:b-adapt=2:rd=4:psy-rd=2.0:aq-mode=3:aq-strength=0.8:deblock=-1,-1"
+            args += ["-x265-params", x265_params]
             return args
         elif self.encoder == "libvpx-vp9":
             return [
@@ -666,15 +691,22 @@ class CompressThread(QThread):
         if self.encoder == "libx264":
             ref, bframes = pick_ref_bframes(width, height)
             tune_hint = "animation" if is_animation else "film"
+            fps_num, fps_den = probe_framerate(src)
+            keyint = max(int(fps_num * 8 / fps_den), 1)
+            min_keyint = max(int(fps_num / fps_den), 1)
             x264_params = (
                 f"ref={ref}:"
                 f"bframes={bframes}:b-adapt=2:"
-                "me=umh:subme=10:"
-                "rc-lookahead=50:"
+                "me=umh:merange=34:subme=10:"
+                f"keyint={keyint}:min-keyint={min_keyint}:scenecut=60:"
+                "rc-lookahead=240:"
                 "trellis=2:"
-                "aq-mode=3:aq-strength=1.1:"
-                "psy-rd=1.0\\:-0.15:"
-                "deblock=-1\\:-1"
+                "aq-mode=3:aq-strength=0.9:"
+                "psy-rd=1.0\\:0.15:"
+                "deblock=-1\\:-1:"
+                "qcomp=0.5:"
+                "partitions=all:no-fast-pskip:"
+                "direct=auto"
             )
             return [
                 "-c:v", "libx264",
@@ -685,11 +717,12 @@ class CompressThread(QThread):
                 "-pass", "1", "-passlogfile", passlog,
             ]
         elif self.encoder == "libx265":
+            x265_params = f"pass=1:stats={passlog}:ref=4:bframes=8:b-adapt=2:rd=4:psy-rd=2.0:aq-mode=3:aq-strength=0.8"
             return [
                 "-c:v", "libx265",
                 "-preset", "slow",
                 "-crf", str(self.crf),
-                "-x265-params", f"pass=2:stats={passlog}",
+                "-x265-params", x265_params,
             ]
         return []
 
@@ -697,15 +730,22 @@ class CompressThread(QThread):
         if self.encoder == "libx264":
             ref, bframes = pick_ref_bframes(width, height)
             tune_hint = "animation" if is_animation else "film"
+            fps_num, fps_den = probe_framerate(src)
+            keyint = max(int(fps_num * 8 / fps_den), 1)
+            min_keyint = max(int(fps_num / fps_den), 1)
             x264_params = (
                 f"ref={ref}:"
                 f"bframes={bframes}:b-adapt=2:"
-                "me=umh:subme=10:"
-                "rc-lookahead=50:"
+                "me=umh:merange=34:subme=10:"
+                f"keyint={keyint}:min-keyint={min_keyint}:scenecut=60:"
+                "rc-lookahead=240:"
                 "trellis=2:"
-                "aq-mode=3:aq-strength=1.1:"
-                "psy-rd=1.0\\:-0.15:"
-                "deblock=-1\\:-1"
+                "aq-mode=3:aq-strength=0.9:"
+                "psy-rd=1.0\\:0.15:"
+                "deblock=-1\\:-1:"
+                "qcomp=0.5:"
+                "partitions=all:no-fast-pskip:"
+                "direct=auto"
             )
             return [
                 "-c:v", "libx264",
@@ -716,11 +756,12 @@ class CompressThread(QThread):
                 "-pass", "2", "-passlogfile", passlog,
             ]
         elif self.encoder == "libx265":
+            x265_params = f"pass=2:stats={passlog}:ref=4:bframes=8:b-adapt=2:rd=4:psy-rd=2.0:aq-mode=3:aq-strength=0.8"
             return [
                 "-c:v", "libx265",
                 "-preset", "slow",
                 "-crf", str(self.crf),
-                "-x265-params", f"pass=2:stats={passlog}",
+                "-x265-params", x265_params,
             ]
         return []
 
@@ -953,14 +994,25 @@ class VideoScanner(QWidget):
         row2.addStretch()
         layout.addLayout(row2)
 
-        # 第三行：操作按钮
-        row3 = QHBoxLayout()
-        row3.setSpacing(8)
+        # 第三行：文件操作
+        row3a = QHBoxLayout()
+        row3a.setSpacing(6)
         self.btn_import = QPushButton("导入文件")
         self.btn_scan = QPushButton("扫描文件夹")
         self.btn_stop_scan = QPushButton("停止扫描")
         self.btn_save_list = QPushButton("保存列表")
         self.btn_load_list = QPushButton("加载列表")
+        row3a.addWidget(self.btn_import)
+        row3a.addWidget(self.btn_scan)
+        row3a.addWidget(self.btn_stop_scan)
+        row3a.addWidget(self.btn_save_list)
+        row3a.addWidget(self.btn_load_list)
+        row3a.addStretch()
+        layout.addLayout(row3a)
+
+        # 第四行：压缩控制
+        row3b = QHBoxLayout()
+        row3b.setSpacing(6)
         self.btn_compress = QPushButton("压缩选中")
         self.btn_pause = QPushButton("暂停")
         self.btn_resume = QPushButton("继续")
@@ -969,23 +1021,17 @@ class VideoScanner(QWidget):
         self.combo_select_by.addItems(["全部", "1星", "2星", "3星", "4星", "5星"])
         self.combo_select_by.currentIndexChanged.connect(self.select_by_stars)
         self.chk_delete_source = QCheckBox("压缩后删除源文件")
-        row3.addWidget(self.btn_import)
-        row3.addWidget(self.btn_scan)
-        row3.addWidget(self.btn_stop_scan)
-        row3.addSpacing(10)
-        row3.addWidget(self.btn_save_list)
-        row3.addWidget(self.btn_load_list)
-        row3.addSpacing(15)
-        row3.addWidget(self.btn_compress)
-        row3.addWidget(self.btn_pause)
-        row3.addWidget(self.btn_resume)
-        row3.addWidget(self.btn_stop)
-        row3.addSpacing(15)
-        row3.addWidget(QLabel("按价值勾选:"))
-        row3.addWidget(self.combo_select_by)
-        row3.addWidget(self.chk_delete_source)
-        row3.addStretch()
-        layout.addLayout(row3)
+        row3b.addWidget(self.btn_compress)
+        row3b.addWidget(self.btn_pause)
+        row3b.addWidget(self.btn_resume)
+        row3b.addWidget(self.btn_stop)
+        row3b.addSpacing(20)
+        row3b.addWidget(QLabel("按价值勾选:"))
+        row3b.addWidget(self.combo_select_by)
+        row3b.addSpacing(10)
+        row3b.addWidget(self.chk_delete_source)
+        row3b.addStretch()
+        layout.addLayout(row3b)
 
         self.btn_stop_scan.setEnabled(False)
         self.btn_pause.setEnabled(False)
