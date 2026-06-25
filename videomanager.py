@@ -965,9 +965,10 @@ class VideoScanner(QWidget):
         self.btn_pause = QPushButton("暂停")
         self.btn_resume = QPushButton("继续")
         self.btn_stop = QPushButton("停止")
-        self.chk_select_all = QCheckBox("全选")
+        self.combo_select_by = QComboBox()
+        self.combo_select_by.addItems(["全部", "1星", "2星", "3星", "4星", "5星"])
+        self.combo_select_by.currentIndexChanged.connect(self.select_by_stars)
         self.chk_delete_source = QCheckBox("压缩后删除源文件")
-        self.chk_select_all.stateChanged.connect(self.toggle_select_all)
         row3.addWidget(self.btn_import)
         row3.addWidget(self.btn_scan)
         row3.addWidget(self.btn_stop_scan)
@@ -980,7 +981,8 @@ class VideoScanner(QWidget):
         row3.addWidget(self.btn_resume)
         row3.addWidget(self.btn_stop)
         row3.addSpacing(15)
-        row3.addWidget(self.chk_select_all)
+        row3.addWidget(QLabel("按价值勾选:"))
+        row3.addWidget(self.combo_select_by)
         row3.addWidget(self.chk_delete_source)
         row3.addStretch()
         layout.addLayout(row3)
@@ -1087,12 +1089,28 @@ class VideoScanner(QWidget):
             save_cache(cache)
             self.status_label.setText(f"导入完成 - 成功导入 {count} 个文件")
 
-    def toggle_select_all(self, state: int) -> None:
-        check_state = Qt.CheckState.Checked if state == 2 else Qt.CheckState.Unchecked
+    def select_by_stars(self, index: int) -> None:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
-            if item:
-                item.setCheckState(check_state)
+            if not item:
+                continue
+            if index == 0:
+                item.setCheckState(Qt.CheckState.Checked)
+                continue
+            score_item = self.table.item(row, 8)
+            if not score_item:
+                item.setCheckState(Qt.CheckState.Unchecked)
+                continue
+            score = score_item.data(Qt.ItemDataRole.UserRole) or 0
+            if index == 1:
+                checked = score > 0
+            elif index == 2:
+                checked = score >= 30
+            elif index == 3:
+                checked = score >= 50
+            else:
+                checked = score >= 70
+            item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
 
     def stop_scan(self) -> None:
         if self.thread:
@@ -1249,6 +1267,7 @@ class VideoScanner(QWidget):
         
         score_item = QTableWidgetItem(stars)
         score_item.setForeground(QColor(color))
+        score_item.setData(Qt.ItemDataRole.UserRole, score)
         self.table.setItem(row, 8, score_item)
         
         save_item = QTableWidgetItem(f"~{save_pct}%")
@@ -1472,8 +1491,8 @@ def main():
             alternate-background-color: #f8fafc;
             border: 1px solid #e2e8f0;
             gridline-color: #f1f5f9;
-            selection-background-color: #3b82f6;
-            selection-color: white;
+            selection-background-color: #e0e7ff;
+            selection-color: #1e293b;
         }
         QTableWidget::item { padding: 4px 6px; }
 
@@ -1496,6 +1515,17 @@ def main():
             background-color: white;
         }
         QCheckBox::indicator:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        QTableWidget::indicator {
+            width: 16px; height: 16px;
+            border-radius: 3px;
+            border: 1px solid #cbd5e1;
+            background-color: white;
+        }
+        QTableWidget::indicator:checked {
             background-color: #3b82f6;
             border-color: #3b82f6;
         }
